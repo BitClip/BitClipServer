@@ -27,6 +27,7 @@ setInterval(function() {
 // an answer from our aggregated market data table,
 // based on user-specified parameters
 app.get('/api/marketdata', function(req, res) {
+  console.log('Interpreting market data request.');
   dbRequest.deliverMarketData(req).then(function(data) {
     res.status(200).send(data);
   });
