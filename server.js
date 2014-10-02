@@ -21,7 +21,7 @@ dbRequest.initializeGetRequests();
 // data table
 setInterval(function() {
   dbRequest.aggregateTables();
-}, 60000);
+}, 300000);
 
 // Sending a GET request to /api/marketdata will return
 // an answer from our aggregated market data table,

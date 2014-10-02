@@ -1,8 +1,10 @@
 var q = require('q');
 var http = require('http');
+var https = require('https');
 var Pusher = require('pusher-client');
 var db = require('./dbSchema.js');
 var BitstampData = require('./models/bitstampModel.js');
+var BitfinexData = require('./models/bitfinexModel.js');
 
 // List of all API sockets we want to connect to
 var apiSockets = {
@@ -10,12 +12,15 @@ var apiSockets = {
 };
 
 // List of all API URLs we will send GET requests to
+// Format: [URL, requests/hour]
 var apiGetRequests = {
+  bitfinex: ['https://api.bitfinex.com/v1/trades/btcusd' + '?timestamp=', 60]
 };
 
 // Format: [APIModelName, APITableName]
 var apiDbSetup = {
-  bitstamp: [BitstampData, 'bitstampMarketData']
+  bitstamp: [BitstampData, 'bitstampMarketData'],
+  bitfinex: [BitfinexData, 'bitfinexMarketData']
 };
 
 // The obj is the JSON object we receive from the API.
@@ -27,6 +32,14 @@ var apiModelInfo = {
       amount: obj.amount,
       price: obj.price
     };
+  },
+  bitfinex: function(obj) {
+    return {
+      bitfinexTradeKey: obj.tid,
+      amount: obj.amount,
+      price: obj.price,
+      createdAt: obj.timestamp
+    };
   }
 };
 
@@ -34,6 +47,14 @@ var apiModelInfo = {
 // that will be added to our aggregated market data table
 var apiTableInfo = {
   bitstamp: function(row) {
+    return {
+      sourceKey: row.sourceKey,
+      amount: row.amount,
+      price: row.price,
+      createdAt: row.createdAt
+    };
+  },
+  bitfinex: function(row) {
     return {
       sourceKey: row.sourceKey,
       amount: row.amount,
@@ -63,7 +84,47 @@ dbRequests.initializeSockets = function() {
 };
 
 dbRequests.initializeGetRequests = function() {
+  for (var api in apiGetRequests) {
+    var httpOrHttps = new RegExp('https://');
+    var httpCheck = new RegExp('http://');
+    if (httpOrHttps.exec(apiGetRequests[api][0])) {
+      dbRequests.getRequestEvents[api] = function() {
+        url = apiGetRequests[api][0] + ((Date.now() / 1000) - 60);
+        https.get(url, function(res) {
+          var data = '';
+          res.on('data', function(chunk) {
+            data += chunk;
+          });
+          res.on('end', function() {
+            data = JSON.parse(data);
+            for (var i = 0, l = data.length; i < l; i++) {
+              dbRequests.createModels(api, data[i]);
+            }
+          });
+        });
+      };
+    } else if (httpCheck.exec(apiGetRequests[api][0])) {
+      dbRequests.getRequestEvents[api] = function() {
+        url = apiGetRequests[api][0] + ((Date.now() / 1000) - 60);
+        http.get(url, function(res) {
+          var data = '';
+          res.on('data', function(chunk) {
+            data += chunk;
+          });
+          res.on('end', function() {
+            data = JSON.parse(data);
+            for (var i = 0, l = data.length; i < l; i++) {
+              dbRequests.createModels(api, data[i]);
+            }
+          });
+        });
+      };
+    }
+  }
+  setInterval(dbRequests.getRequestEvents[api], 3600000 / apiGetRequests[api][1]);
 };
+
+dbRequests.getRequestEvents = {};
 
 dbRequests.createModels = function(api, obj) {
   var trade = new apiDbSetup[api][0](apiModelInfo[api](obj));

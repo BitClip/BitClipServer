@@ -39,6 +39,19 @@ db.knex.schema.hasTable('bitstampMarketData').then(function(exists) {
   }
 });
 
+db.knex.schema.hasTable('bitfinexMarketData').then(function(exists) {
+  if (!exists) {
+    db.knex.schema.createTable('bitfinexMarketData', function(marketData) {
+      marketData.increments('bitfinexTradeKey').primary();
+      marketData.float('amount');
+      marketData.decimal('price', 18, 2);
+      marketData.integer('createdAt');
+    }).then(function(table) {
+      console.log('Created bitfinexMarketData', table);
+    });
+  }
+});
+
 /************************************************************/
 // Utility and joining tables
 /************************************************************/
