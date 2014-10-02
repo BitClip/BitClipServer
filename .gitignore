@@ -1,5 +1,3 @@
 node_modules
-.deployment
-deploy.sh
 azure.err
 *.publishsettings
