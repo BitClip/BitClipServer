@@ -5,6 +5,7 @@ var Pusher = require('pusher-client');
 var db = require('./dbSchema.js');
 var BitstampData = require('./models/bitstampModel.js');
 var BitfinexData = require('./models/bitfinexModel.js');
+var BtcEData = require('./models/btcEModel.js');
 
 // List of all API sockets we want to connect to
 var apiSockets = {
@@ -14,13 +15,15 @@ var apiSockets = {
 // List of all API URLs we will send GET requests to
 // Format: [URL, requests/hour]
 var apiGetRequests = {
-  bitfinex: ['https://api.bitfinex.com/v1/trades/btcusd?timestamp=', 60]
+  bitfinex: ['https://api.bitfinex.com/v1/trades/btcusd?timestamp=', 60],
+  btcE: ['https://btc-e.com/api/3/trades/btc_usd', 60]
 };
 
 // Format: [APIModelName, APITableName]
 var apiDbSetup = {
   bitstamp: [BitstampData, 'bitstampMarketData'],
-  bitfinex: [BitfinexData, 'bitfinexMarketData']
+  bitfinex: [BitfinexData, 'bitfinexMarketData'],
+  btcE: [BtcEData, 'btcEMarketData']
 };
 
 // The obj is the JSON object we receive from the API.
@@ -40,6 +43,14 @@ var apiModelInfo = {
       price: obj.price,
       createdAt: obj.timestamp * 1000
     };
+  },
+  btcE: function(obj) {
+    return {
+      btcETradeKey: obj.tid,
+      amount: obj.amount,
+      price: obj.price,
+      createdAt: obj.timestamp * 1000
+    };
   }
 };
 
@@ -55,6 +66,14 @@ var apiTableInfo = {
     };
   },
   bitfinex: function(row) {
+    return {
+      sourceKey: row.sourceKey,
+      amount: row.amount,
+      price: row.price,
+      createdAt: row.createdAt
+    };
+  },
+  btcE: function(row) {
     return {
       sourceKey: row.sourceKey,
       amount: row.amount,
@@ -84,44 +103,50 @@ dbRequests.initializeSockets = function() {
 };
 
 dbRequests.initializeGetRequests = function() {
+  var httpsCheck = new RegExp('https://');
+  var httpCheck = new RegExp('http://');
+
   for (var api in apiGetRequests) {
-    var httpOrHttps = new RegExp('https://');
-    var httpCheck = new RegExp('http://');
-    if (httpOrHttps.exec(apiGetRequests[api][0])) {
-      dbRequests.getRequestEvents[api] = function() {
-        url = apiGetRequests[api][0] + (Math.ceil((Date.now() / 1000)) - 59);
-        https.get(url, function(res) {
-          var data = '';
-          res.on('data', function(chunk) {
-            data += chunk;
+    if (httpsCheck.exec(apiGetRequests[api][0])) {
+      if (api === 'bitfinex') {
+        dbRequests.getRequestEvents[api] = function() {
+          var url = apiGetRequests.bitfinex[0] + (Math.ceil((Date.now() / 1000)) - 59);
+          https.get(url, function(res) {
+            var data = '';
+            res.on('data', function(chunk) {
+              data += chunk;
+            });
+            res.on('end', function() {
+              data = JSON.parse(data);
+              for (var i = 0, l = data.length; i < l; i++) {
+                dbRequests.createModels('bitfinex', data[i]);
+              }
+            });
           });
-          res.on('end', function() {
-            data = JSON.parse(data);
-            for (var i = 0, l = data.length; i < l; i++) {
-              dbRequests.createModels(api, data[i]);
-            }
+        };
+      } else if (api === 'btcE') {
+        dbRequests.getRequestEvents[api] = function() {
+          var timeThreshold = Math.ceil(Date.now() / 1000) - 59;
+          var url = apiGetRequests.btcE[0];
+          https.get(url, function(res) {
+            var data = '';
+            res.on('data', function(chunk) {
+              data += chunk;
+            });
+            res.on('end', function() {
+              data = JSON.parse(data);
+              for (var i = 0, l = data.btc_usd.length; i < l; i++) {
+                if (data.btc_usd[i].timestamp > timeThreshold) dbRequests.createModels('btcE', data.btc_usd[i]);
+              }
+            });
           });
-        });
-      };
+        };
+      }
     } else if (httpCheck.exec(apiGetRequests[api][0])) {
-      dbRequests.getRequestEvents[api] = function() {
-        url = apiGetRequests[api][0] + (Math.ceil((Date.now() / 1000)) - 59);
-        http.get(url, function(res) {
-          var data = '';
-          res.on('data', function(chunk) {
-            data += chunk;
-          });
-          res.on('end', function() {
-            data = JSON.parse(data);
-            for (var i = 0, l = data.length; i < l; i++) {
-              dbRequests.createModels(api, data[i]);
-            }
-          });
-        });
-      };
+      // No http:// GET requests for now
     }
+    setInterval(dbRequests.getRequestEvents[api], 3600000 / apiGetRequests[api][1]);
   }
-  setInterval(dbRequests.getRequestEvents[api], 3600000 / apiGetRequests[api][1]);
 };
 
 dbRequests.getRequestEvents = {};
