@@ -14,7 +14,7 @@ var apiSockets = {
 // List of all API URLs we will send GET requests to
 // Format: [URL, requests/hour]
 var apiGetRequests = {
-  bitfinex: ['https://api.bitfinex.com/v1/trades/btcusd' + '?timestamp=', 60]
+  bitfinex: ['https://api.bitfinex.com/v1/trades/btcusd?timestamp=', 60]
 };
 
 // Format: [APIModelName, APITableName]
@@ -38,7 +38,7 @@ var apiModelInfo = {
       bitfinexTradeKey: obj.tid,
       amount: obj.amount,
       price: obj.price,
-      createdAt: obj.timestamp
+      createdAt: obj.timestamp * 1000
     };
   }
 };
@@ -89,7 +89,7 @@ dbRequests.initializeGetRequests = function() {
     var httpCheck = new RegExp('http://');
     if (httpOrHttps.exec(apiGetRequests[api][0])) {
       dbRequests.getRequestEvents[api] = function() {
-        url = apiGetRequests[api][0] + ((Date.now() / 1000) - 60);
+        url = apiGetRequests[api][0] + (Math.ceil((Date.now() / 1000)) - 59);
         https.get(url, function(res) {
           var data = '';
           res.on('data', function(chunk) {
@@ -105,7 +105,7 @@ dbRequests.initializeGetRequests = function() {
       };
     } else if (httpCheck.exec(apiGetRequests[api][0])) {
       dbRequests.getRequestEvents[api] = function() {
-        url = apiGetRequests[api][0] + ((Date.now() / 1000) - 60);
+        url = apiGetRequests[api][0] + (Math.ceil((Date.now() / 1000)) - 59);
         http.get(url, function(res) {
           var data = '';
           res.on('data', function(chunk) {
